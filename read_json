@@ -1,0 +1,65 @@
+from sys import argv
+import re
+import json
+from pyspark import SparkConf
+from pyspark.sql import HiveContext ,Window, SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import *
+from pyspark.sql.functions import from_json
+import pyspark.sql.types as T
+import json
+import pandas as pd
+
+app_name = "Run workflow to populate commissionlog_CommissionCalculationEvent "
+   
+hc = (SparkSession
+         .builder
+         .appName(app_name)
+         .config("spark.dynamicAllocation.cachedExecutorIdleTimeout","1800")
+         .config("spark.dynamicAllocation.enabled","true")
+         .config("spark.dynamicAllocation.executorIdleTimeout","60")
+         .config("spark.dynamicAllocation.maxExecutors","180") #was: 108
+         .config("spark.dynamicAllocation.minExecutors","0")
+         .config("spark.task.maxFailures",u"20")
+         .config("spark.sql.shuffle.partitions",u"1024")
+         .config("spark.shuffle.sort.bypassMergeThreshold",u"2000")
+         .config("spark.network.timeout",u"800")
+         .config("spark.default.parallelism", u"2000")
+         .config("spark.yarn.executor.memoryOverhead", 2000)
+         .config("spark.driver.memory","10g")
+         .config("spark.executor.memory","14g")
+         .config("spark.rdd.compress", "true")
+         .config("spark.shuffle.compress", "true")
+#        .config("spark.files.maxPartitionBytes", 154217728)
+         .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+         .config("hive.exec.dynamic.partition", "true")
+         .config("hive.exec.dynamic.partition.mode", "nonstrict")
+
+#         .config("spark.driver.cores", 10)
+         .enableHiveSupport()
+         .getOrCreate()
+         )
+         
+         my_df = spark.sql("""select roomreservation_id,hotelreservation_id,payload from default.commissionlog_CommissionCalculationEvent limit 100""").repartition(1).cache()
+         
+         #using from_json 
+
+schema1 = (T.StructType()
+         .add("computations", T.StructType().add("effective_factors", T.ArrayType( T.ArrayType(T.IntegerType())))))
+schema2 = (T.StructType()
+         .add("computations", T.StructType().add("daily_commission_percentage", T.ArrayType(T.StringType()))))
+         
+#     (my_df
+# .withColumn('effective_factors', F.from_json(F.col('payload'),schema1).computations.effective_factors)
+# .withColumn('daily_commission_percentage', F.from_json(F.col('payload'),schema2).computations.daily_commission_percentage)).toPandas()
+
+
+output_save = (my_df
+ .withColumn('effective_factors', F.from_json(F.col('payload'),schema1).computations.effective_factors)
+ .withColumn('daily_commission_percentage', F.from_json(F.col('payload'),schema2).computations.daily_commission_percentage))
+
+type(output_save)
+
+output_save.write.mode("overwrite").saveAsTable("mtutulan.read_json_spark")
+
+
